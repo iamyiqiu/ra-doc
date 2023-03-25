@@ -1,0 +1,495 @@
+\chapter{A robo-advising algorithm}
+
+In this chapter, we elaborate in great detail on a robo-advising algorithm -- its problem setting, optimal strategy, computation of such strategy and the estimation of personalized parameters. This chapter is based on and an extention to the robo-advising algorithm described by \citeA{capponi2022personalized}. We adopt the their problem setting, but provide a much more detailed description on the numerical computation of the optimal strategy (in Section \ref{sec:comp}), and demonstrate a method of estimating personalized parameters of the client (in Section \ref{sec:est}), which is oversimplified and omitted in \citeA{capponi2022personalized}. 
+
+\section{Problem setting}\label{sec:setting}
+\subsection{Market model}\label{sec:market_model}
+We adopt the market model of \citeA{capponi2022personalized}. We consider a period of time of length $T$, i.e., $n=0,1,\ldots,T-1$. At time $n$, the economy state $Y_n\in\mathcal{Y}$ is observable to all, where $\mathcal{Y}=\{1,2\}$ denoting the two possible economy states. We assume the economy state variable $Y_n$ to follow a Markov chain with transition matrix $P$, i.e. $$\Pr[Y_{n+1}=y|Y_n]=P_{Y_n, y},\quad n=0,1,\ldots T-1.$$
+
+There exist two available assets, a risk-free asset $(B_n)_{n\geq 0}$ and a risky asset $(S_n)_{n\geq 0}$, whose returns depend on the economy state. At time $n$, the risk-free asset has a constant interest rate $r_{n+1}=r(Y_n)$ dependent on the current economy state, and the risky asset has a random return rate $Z_{n+1}\sim\mathcal{N}(\mu(Y_n),\sigma^2(Y_n))$ whose mean and variance also depend on the current economy state $Y_n$. Functions $r,\mu,\sigma^2$ of economy state are public knowledge to all. Hence, we have \begin{equation}
+    \begin{aligned}
+        B_{n+1}&=(1+r_{n+1})B_n,\\
+        S_{n+1}&=(1+Z_{n+1})S_n.
+    \end{aligned}
+\end{equation} Note that $r_{n+1}$ and $Z_{n+1}$ are indexed by $n+1$ as they are the return rates of the respective assets at timestamp $n+1$. At time $n$, given the economy state $Y_n$, only the distribution of $Z_{n+1}$ is revealed, instead of the actual valuation of  $Z_{n+1}$. $Z_{n+1}$ is only determined at time $n+1$. For simplicity of our notations, let $\mu_{n+1}=\mu(Y_n)$ and $\sigma_{n+1}=\sigma(Y_n)$. In this way, $Z_{n+1}$ will follow the distribution $\mathcal{N}(\mu_{n+1},\sigma^2_{n+1})$. Note that $\mu_{n+1},\sigma_{n+1},r_{n+1}$ only depend on $Y_n$ and hence are revealed at time $n$.
+
+We consider a self financing investment strategy $(\pi_n)_{n\geq 0}$ in the market dynamics described earlier, where $\pi_n$ is the amount of wealth invested in the risky asset at time $n$. Let the client's wealth at time $n$ to be $X_n$, and let $X_0$ to be a pre-defined constant. Then given a investment strategy $\pi$, the wealth process follows \begin{equation}
+    X_{n+1}=(1+r)(X_n-\pi_n) + (1+Z_{n+1})\pi_n=(1+r)X_n+(Z_{n+1}-r)\pi_n.
+\end{equation}
+
+The robo-advisor, via interactions and modelling, chooses the investment strategy on behalf of the client, in order to maximize a mean-variance objective function dependent on the robo-advisor's modelling of client's risk aversion. To specify such objective function, we introduce the client's and the robo-advisor's model of risk aversion in Section \ref{sec:client_model} and Section \ref{sec:robo_model}.
+
+\subsection{Client model}\label{sec:client_model}
+\subsubsection{Client's internal model of risk aversion process}
+The client has their internal model of risk aversion process, $\gamma_n^C$, $n=0,1,\ldots,T-1$. Client's risk aversion depends on time, idiosyncratic shocks and economy status. More specifically, the client's risk aversion process follows\begin{equation}
+    \gamma_n^C=e^{\eta_n}\gamma_n^{id}\gamma_n^Y, \qquad n=0,1,\ldots,T-1.
+\end{equation}
+
+Client's risk aversion process consists of three components:\begin{enumerate}
+    \item \textbf{Effects of age over time.} $\eta_n=-\alpha(T-n)$ captures the effect of age increasing the risk aversion over time and parameter $\alpha\in\mathbb{R}_{\geq0}$ represents the magnitude of such effect. The larger $\alpha$ is, the more risk averse the client become as time goes by.
+    \item \textbf{Personal idiosyncratic shocks.} $\gamma_n^{id}$ represents the idiosyncratic shocks to the client’s risk aversion independent on time, economy states or investment performance. It is defined as\begin{equation}\label{eq:gamma_id}
+        \gamma_{n}^{id}=\gamma_{n-1}^{id}\cdot e^{\epsilon_{n}},\qquad n=1,\ldots,T-1.
+    \end{equation}It is controlled by $(\epsilon_n)_{n\geq1}$, an independently and identically distributed random variables that admit the following distribution \begin{equation}\label{eq:eps}
+        \epsilon_n=\begin{cases}
+            \mathcal{N}(0,\sigma^2_\epsilon),\quad &\text{with probability} p_\epsilon;\\
+            0,\quad&\text{with probability} 1-p_\epsilon.
+        \end{cases}
+    \end{equation}
+    Here, $p_\epsilon\in[0,1]$, $\sigma_\epsilon\in\mathbb{R}^+$ are personalized parameters of the client. $p_\epsilon$ is the probability that this component changes, in which case $\epsilon_n$ will be drawn from a normal distribution with zero mean and $\sigma_\epsilon^2$ variance. With probability $1-p_\epsilon$, the idiosyncratic shock component will not change. Usually $p_\epsilon$ is set to be small, such as $0.05$, to reflect the practical scenario that a random oscillation to client's risk aversion does not occur with a high probability. 
+    \item \textbf{Economy state.} A client's risk aversion also depends on the current economy state, reflected by the component $\gamma_n^Y$. $\gamma_n^Y$ is a deterministic constant determined by $(Y_n)$, which increases as the market's Sharpe ratio increases \cite{lettau2010measuring}. This is because a human client tends to reduce his or her investment in the risky asset if the market Sharpe ratio is high. \citeA{capponi2022personalized} only describes this coefficient to be increasing in the market Sharpe ratio, but does not give a construction of $\gamma_n^Y$. To make sure that $\gamma_n^Y\geq0$, we define $\gamma_n^Y$ as \begin{equation}\label{eq:gamma_y}
+        \gamma_n^Y=\exp(S(Y_n))=\exp{\left(\frac{\mu(Y_n)-r(Y_n)}{\sigma(Y_n)}\right)}.
+    \end{equation}
+\end{enumerate}
+
+At last, we show that $(\gamma_n^C)_{n\geq0}$ is well-defined once the initialization $\gamma_0^C$ is given.
+
+The risk aversion process $(\gamma_n^C)_{n\geq0}$ is initialized with a given constant $\gamma_0$, which is also a personalized parameter of the client (in addition to $\alpha,p_\epsilon,\sigma_\epsilon$). Once $\gamma_0^C=\gamma_0$ is determined, as $\eta_0,\gamma_0^Y$ are deterministic given the time horizon and initialized economy state, $\gamma_0^{id}$ is initialized accordingly as $\gamma_0/(e^{\eta_0}\gamma_0^{Y})$. For later timestamps, $\eta_n=-\alpha(T-n)$, $\gamma_n^{id}$ follows Equation (\ref{eq:gamma_id}) and $\gamma_n^Y$ follows Equation (\ref{eq:gamma_y}). Hence, client's risk aversion process $(\gamma_n^C)_{n\geq0}$ is well-defined.
+
+\subsubsection{Client's behavioral bias on risk aversion}
+
+Other than client's risk aversion process $(\gamma_n^C)_{n\geq 0}$, we also consider behavioral bias on client's risk aversion influenced by market performance (the return rate of the risky asset). Note that client does not always know about market performance unless he or she interacts with the robo-advisor and being inquired to communicate update his or her risk aversion. Denote $\tau_n$ to be the timestamp of the most recent interaction at time $n$. It is trivial to see that time $n$ is an interaction time if and only if $\tau_n=n$, and the previous interaction time (if that exists, i.e. $n>0$) is at time $\tau_{n-1}$.
+
+At interaction time $n>0$, where $n=\tau_n$, client's behavioral bias will be applied on the communicated risk aversion \begin{equation}\label{eq:gamma_z}
+    \xi_n=\gamma_n^C\gamma_n^Z=\gamma_n^C\exp{\left(-\beta\left(\frac1{n-\tau_{n-1}}\sum_{k=\tau_{n-1}}^{n-1}(Z_{k+1}-\mu_{k+1})\right)\right)}.
+\end{equation}
+In Equation (\ref{eq:gamma_z}), $\gamma_Z$ is defined in a way that depends on the market performance since after the previous interaction time (at time $\tau_{n-1}+1)$ up to now (at time $n$). If the total return of the risky asset $\sum_{k=\tau_{n-1}}^{n-1} Z_{k+1}$ exceeds the expectation $\sum_{k=\tau_{n-1}}^{n-1}\mu_{k+1}$, $\gamma_n^Z$ will be less than one, indicating a discounting effect on the communicated risk aversion, and vise versa. This reflects the behavioral bias of the client due to the trend-chasing mindset \cite{oechssler2009cognitive}, that is, a client will tend be more risk-tolerant if the performance of the current portfolio exceeds the expectation.
+
+At initial time $n=0$, even if it is an interaction time (i.e. $\tau_0=0$), there will be no behavioral bias on the communicated risk aversion, i.e. $\xi_0=\gamma_0^C=\gamma_0$, because there is no history of market performance for the client to observe.
+
+Also, at non-interaction times, we define $\xi_n=\xi_{\tau_n}$, the most recent communicated risk aversion.
+
+At last, note that $\beta$ in Equation (\ref{eq:gamma_z}) is another client's personalized parameter that controls the magnitude of the trend-chasing behavioral bias. Larger $\beta$ indicates that the client will be biased to be more tolerant towards risk if the market performs better than expectation. To summarize, there are in total the following such personalized parameters that control the dynamics of the client's risk aversion process and behavioral bias, as shown in Table \ref{tab:param}. 
+
+\begin{table}[t]
+\centering
+\begin{tabular}{clp{8cm}}
+\toprule
+\textsc{Parameter} & \textsc{Domain} & \textsc{Description}\\
+\midrule
+$\gamma_0$ &$\mathbb{R}_{\geq0}$& The initial risk aversion of the client.\\
+$\alpha$ &$\mathbb{R}_{\geq0}$& Measures the effects of time on increasing the client's risk aversion.\\
+$\beta$ &$\mathbb{R}_{\geq0}$& Measures how much the market performance history will bias the client's communicated risk aversion at interaction times.\\
+$p_\epsilon$ &$[0,1]$& The probability of the idiosyncratic shock component does not stay constant (i.e. $\epsilon_n\neq0$). \\
+$\sigma_\epsilon$ &$\mathbb{R}_{\geq0}$& The standard deviation of $\epsilon_n$ if it is not zero, which occurs with probability $p_\epsilon$.\\
+\bottomrule
+\end{tabular}%
+\caption{List of client's personalized parameters that control the client's risk aversion and behavioral bias.}
+\label{tab:param}
+\end{table}
+
+\section{Robo-advisor's model and optimal strategy}\label{sec:robo_model}
+In this section, we describe the robo-advisor's model of the client's risk aversion process, its investment objective, and its optimal strategy. Again, we mostly follow the settings of \citeA{capponi2022personalized} and complement where is not described in much detail.
+
+\subsection{Robo-advisor's model of the client's risk aversion process}
+First, \citeA{capponi2022personalized} assume that the personalized parameters of the client, i.e., the parameters listed in Table \ref{tab:param}, are known to the robo-advisor. That is, \citeA{capponi2022personalized} assume that the robo-advisor has complete knowledge on the mechanism following which the client's risk aversion process is generated. However, this is an oversimplified assumption that may not hold realistic in practice. For now, we assume this assumption holds and we will give an algorithm in Section \ref{sec:est} for the robo-advisor to estimate these personalized parameters through testing interactions beforehand.
+
+\subsubsection{Interaction model} As introduced earlier, the robo-advisor follows a pre-determined fixed interaction schedule that is defined by the sequence $(\tau_n)_{n\geq0}$ where $\tau_n$ is the most recent interaction time before timestamp $n$ (inclusive). Following \citeA{capponi2022personalized}, we consider an uniform interaction schedule parameterized by the interaction interval $\phi\in\mathbb{N}_+$, where $0,\phi,2\phi,\ldots$ are the timestamps where interaction occurs.
+
+At interaction time $n$, i.e., $\tau_n=n$, the robo-advisor interacts with the client and receives communicated risk aversion $\xi_n$ that is behaviorally biased by the market performance since the previous interaction (if existing) up to date, as defined in Equation (\ref{eq:gamma_z}).
+
+\subsubsection{Robo-advisor's model of the client's risk aversion process}
+
+Through its knowledge on the distribution of the client's risk aversion process, and the communicated (biased) risk aversion values at interaction times, the robo-advisor maintains its own model of client's risk aversion process, denoted as $(\gamma_n^R)_{n\geq0}$, following \begin{equation}
+    \label{eq:gamma_r}
+    \gamma_n^R=e^{\eta_n-\eta_{\tau_n}}\xi_{\tau_n}\frac{\gamma_n^Y}{\gamma^Y_{\tau_n}}.
+\end{equation}
+
+Equation (\ref{eq:gamma_r}) has the following properties.\begin{enumerate}
+    \item On interaction time $n$, the robo-advisor's model of risk aversion $\gamma_n^R$ is the same as the communicated risk aversion $\xi_n$ as $n=\tau_n$. This makes sense because the robo-advisor will operate on behalf of the client and follows client's direct instructions of the communicated risk aversion.
+    \item On any time $n$, $\gamma_n^R$ is an \textit{approximation} of the expected value of the client's risk aversion $\gamma_n^C$ times the most recent behavioral bias $\gamma_{\tau_n}^Z$. This means that the robo-advisor operates based on its belief of the client's biased risk aversion (as the bias component will remain constant unless interacting with the advisor). To verify the claim, notice \begin{equation}\label{eq:gamma_r_approx}
+        \begin{aligned}\gamma_{\tau_n}^Z\E[\gamma_n^C]&=\xi_{\tau_n}\E\left[\frac{\gamma_n^C}{\gamma_{\tau_n}^C}\right]\\
+        &=\xi_{\tau_n}\E\left[e^{\eta_n-\eta_{\tau_n}}\frac{\gamma_n^{id}}{\gamma_{\tau_n}^{id}}\frac{\gamma_n^{Y}}{\gamma_{\tau_n}^{Y}}\right]\\
+        &=e^{\eta_n-\eta_{\tau_n}}\xi_{\tau_n}\frac{\gamma_n^{Y}}{\gamma_{\tau_n}^{Y}}\E\left[\frac{\gamma_n^{id}}{\gamma_{\tau_n}^{id}}\right]\\
+        &=e^{\eta_n-\eta_{\tau_n}}\xi_{\tau_n}\frac{\gamma_n^{Y}}{\gamma_{\tau_n}^{Y}}\E\left[e^{\sum_{i=\tau_n+1}^n\epsilon_i}\right]\\
+        &\approx e^{\eta_n-\eta_{\tau_n}}\xi_{\tau_n}\frac{\gamma_n^{Y}}{\gamma_{\tau_n}^{Y}}
+        \end{aligned}
+    \end{equation} since $\epsilon_n$ follows Equation (\ref{eq:eps}) and is zero with high probability (i.e. $1-p_\epsilon$ where $p_\epsilon$ is set to be very small, as per previous discussions).
+
+\end{enumerate}
+
+Note that Equation (\ref{eq:gamma_r}) is an approximation of the actual expectation, and the precise value is given by \begin{equation}\label{eq:gamma_r_acc}
+\begin{aligned}
+        \gamma_{\tau_n^Z}\E[\gamma_n^C]&=e^{\eta_n-\eta_{\tau_n}}\xi_{\tau_n}\frac{\gamma_n^{Y}}{\gamma_{\tau_n}^{Y}}\E\left[e^{\sum_{i=\tau_n+1}^n\epsilon_i}\right]\\
+        &=e^{\eta_n-\eta_{\tau_n}}\xi_{\tau_n}\frac{\gamma_n^{Y}}{\gamma_{\tau_n}^{Y}}\prod_{i=\tau_n+1}^n \E\left[e^{\epsilon_i}\right]\\
+        &=e^{\eta_n-\eta_{\tau_n}}\xi_{\tau_n}\frac{\gamma_n^{Y}}{\gamma_{\tau_n}^{Y}}\prod_{i=\tau_n+1}^n \E\left[p_\epsilon e^{X}+(1-p_\epsilon)e^0\right],\qquad\text{where }x\sim\mathcal{N}(0,\sigma_\epsilon^2)\\
+        &=e^{\eta_n-\eta_{\tau_n}}\xi_{\tau_n}\frac{\gamma_n^{Y}}{\gamma_{\tau_n}^{Y}}(e^{\sigma^2_\epsilon/2}p_\epsilon + (1-p_\epsilon))^{n-\tau_n}.
+\end{aligned}
+\end{equation} Here, if we would like Equation (\ref{eq:gamma_r}) to be exact value instead of approximation, one can change the definition of $\epsilon_n$ in Equation (\ref{eq:eps}) to $\mathcal{N}(-\sigma^2_\epsilon/2,\sigma_\epsilon^2)$ with probability $p_\epsilon$ and zero with probability $1-p_\epsilon$. However, such definition will lead to unnecessary complication in Section \ref{sec:est}, and hence we stick to Equation (\ref{eq:eps}).
+
+At last, note that unlike \citeA{alsabah2021robo}, there is no explicit penalty applied to each interaction, there are implicit penalty to too frequent interactions due to the existence of behavioral bias. More frequent interactions will lead to better estimation of the client's risk aversion, but this will also lead to higher behavioral bias as such bias is only applied at interaction times. This trade-off between more accurate estimation and higher bias will be discussed in more detail in Section \ref{sec:personalize}.
+
+% \subsubsection{Improvement on robo-advisor's model of client's risk aversion}
+
+\subsection{Robo-advisor's optimization goal}
+
+Now that we define the robo-advisor's model of risk aversion, we now define the robo-advisor's optimization goal. We adopt the well-known mean-variaznce objective function \cite{markowitz1952portfolio}.
+
+To be more specific, with fixed time horizon $T$, at time $n$, the robo-advisor maximizes the mean-variance objective function \begin{equation}\label{eq:obj}
+\E\left[\frac{X_T^\pi-X_n}{X_n}\right]-\frac{\gamma_n^R}2\Var\left[\frac{X_T^\pi-X_n}{X_n}\right].
+\end{equation}
+That is, at time $n$, the robo-advisor aims to maximize the mean-variance objective with its model of client's risk aversion at time $n$ with regard to the expected return at the terminal time $T$, conditioning on all the information it can obtain at time $n$. 
+
+\subsection{Robo-advisor's optimal strategy and its evaluation}
+
+Note that in Equation (\ref{eq:obj}), the optimization objective at time $n$ not only depends on the information available to the robo-advisor so far, but also involves the estimation of future random processes conditioned on current knowledge. Let $\mathcal{D}_n$ be the set of all possible history information up to time $n$. Then at time $n$, given the current wealth $X_n$ and the current history $d_n$, the optimal strategy at time $n$, $\pi_n^*$, is a function of $x$ and $d_n$, because at time $n$, that's all the information the robo-advisor knows, and it must make a decision based on such information. In fact, this function is of the form \begin{equation}
+    \pi^*_n(x,d_n)=\tilde\pi_n^*(d_n)\cdot x
+\end{equation} for all $x\in \mathbb{R}_{\geq0}$ and all $d_n\in\mathcal D_n$, where naturally, $\tilde\pi_n^*$ is the proportion of current wealth allocated to the risky asset at time $n$. Therefore, our goal is to find $\tilde\pi_n^*(d)$ for all possible $d\in\mathcal{D}_n$.
+
+\citeA{capponi2022personalized} gives the following result for the robo-advisor's optimal strategy. Since the proof of Theorem \ref{thm:optimal} is not of our particular focus (we focus on the numerical algorithm for computation of the optimal strategy), we refer the audience to the original paper by \citeA{capponi2022personalized}.
+
+\begin{theorem}\label{thm:optimal} For an optimal solution to (\ref{eq:obj}), at time $n$, with history $d\in \mathcal{D}_n$, the proportion of current wealth allocated to the risky asset follows
+    \begin{equation}\label{eq:opt}
+    \tilde\pi_n^*(d)=\frac{1}{\gamma_n^R} \frac{\E[(Z_{n+1}-r_{n+1})\frac{X_T^{\pi^*}}{X_{n+1}}]}{\Var[(Z_{n+1}-r_{n+1})\frac{X_T^{\pi^*}}{X_{n+1}}]}-(1+r_{n+1})\frac{\Cov[\frac{X_T^{\pi^*}}{X_{n+1}},(Z_{n+1}-r_{n+1})\frac{X_T^{\pi^*}}{X_{n+1}}]}{\Var[(Z_{n+1}-r_{n+1})\frac{X_T^{\pi^*}}{X_{n+1}}]},
+\end{equation} where all the expectation, variance and covariance are taken over the randomness of the future market (from $Y_{n+1},\ldots$ and $Z_{n+1},\ldots$) and client's risk aversion process (from $\epsilon_{n+1}\ldots$), conditioning on the current information $d\in\mathcal{D}_n$.
+\end{theorem}
+
+\subsubsection{Game theoretic interpretation of the optimal strategy}
+
+Note that in Equation (\ref{eq:opt}), the optimal strategy at time $n$ will depend on the future optimal strategy. This can be interpreted in a game-theoretic way. We can treat finding the optimal strategy to maximize (\ref{eq:obj}) as a multi-stage multi-player game, where the robo-advisor at time $n$ is seen as the $(n+1)$-th player. Each play has a reward function to maximize that is the mean-variance objective of the terminal return given current information. At time $n$, the player can only make decisions based on the current information, given that the future players (i.e., the robo-advisor itself in the future rounds) will act optimally. Therefore, if the strategy at all $n$ satisfies Equation (\ref{eq:opt}), it will be a subgame-perfect equilibrium, and hence optimal.
+
+In the spirit of finding subgame-perfect equilibria, we use backwards induction. For the terminal time $n=T-1$, Equation (\ref{eq:opt}) degenerates to a single step single player game, and the optimal strategy $\tilde\pi_{T-1}^*$ is given by solving the usual simple mean-variance maximization for any possible full history $d_{T-1}$. At time $n<T-1$, assuming that we have solved the optimal strategy of later players given all possible history information. Then the optimal strategy $\tilde\pi_n^*$ is found as a solution to Equation (\ref{eq:obj}) where all later players follow the optimal strategy solved earlier. Note that when solving for $\tilde\pi_n^*$, when calculating the expectation, variance and covariance terms in Equation (\ref{eq:opt}), one need to integrate over all possible future scenarios, which can be done because we have solved $\tilde\pi_m^*(d)$ for all possible $d$ for all $m$ greater than $n$. This is analogous to dynamic programming where results of all possible sub-problems are saved for reference to solve the complete problem.
+
+After the optimal strategy as a function of history information is found via backwards induction, the robo-advisor starts engaging with the actual market and the client. At time $n$, the robo-advisor observes the market information and models client's risk aversion to formulate the history $d_n\in\mathcal{D}_n$, and looks up the earlier found optimal strategy and allocate $\tilde\pi^*_n(d_n)$ of the current wealth to the risky asset.
+
+\begin{algorithm}[t]
+  \caption{\textbf{Overview of the procedure of the robo-advising algorithm.}\\The algorithm consists of two parts: (i) backwards induction to find the optimal strategy as a function of history information; (ii) run the robo-advisor to use the found strategy for portfolio selection as the robo-advisor observes information as time goes by.}\label{alg}
+  \begin{spacing}{1.15}
+  \begin{enumerate}
+    \item For all possible $d\in\mathcal{D}_{T-1}$, solve $\tilde\pi_{T-1}^*(d)$ by solving Equation (\ref{eq:opt}).
+    \item For all $n=T-2,\ldots,0$:\begin{itemize}
+        \item For all possible $d\in\mathcal{D}_n$, solve $\tilde\pi_n^*(d)$ by solving Equation (\ref{eq:opt}), this is possible because for any $m>n$, and for any $d'\in\mathcal{D}_m$, we have already solved $\tilde\pi_m^*(d')$. Hence, one can evaluate the expectation, variance and covariance of future dynamics conditioned on the current information $d$ and the optimality of future actions.
+    \end{itemize}
+    \item This marks the termination of backwards induction, the robo-advisor stores the optimal strategy $\tilde\pi_n^*(d)$ for all $d\in\mathcal{D}_n$ for all $n$.
+    \item For $n=0,1,\ldots,T-1$:\begin{itemize}
+        \item The robo-advisor obtains information $d_n\in\mathcal D_n$ via observing the economy, the market, and possible interactions with the client.
+        \item The robo-advisor allocates wealth of the amount $\tilde\pi_n^*(d_n)X_n$ to the risky asset, which is the optimal strategy.
+    \end{itemize}
+\end{enumerate}
+  \end{spacing}
+\end{algorithm}
+
+Therefore, the procedure of finding the optimal strategy $\tilde\pi^*$ can be described as Algorithm \ref{alg}.
+
+\section{Numerical algorithm for computation of optimal strategy}\label{sec:comp}
+Following \citeA{capponi2022personalized}, we describe a numerical algorithm to evaluate the optimal investment strategy in Equation (\ref{eq:opt}) via backwards induction. \citeA{capponi2022personalized} did not describe the algorithm in great detail but only the high-level ideas. In this section, we close such gap and formally describe the algorithm and its implementation.
+
+We first point out two issues with Algorithm \ref{alg} that render the procedure unrealistic to be run in practice. \begin{enumerate}
+    \item Although it is possible to solve the terminal strategy $\tilde\pi^*_{T-1}$, it is not trivial to solve for $\tilde\pi_n^*$ for smaller $n$ in Line 2 of Algorithm \ref{alg} as this involves expectation, variance and covariance over the randomness of future market and client's risk aversion process.
+    \item For each $n$, one will have to discretize $\mathcal D_n$, the space of history up to time $n$, which is not practical as it is very high dimensional data. The information history available to the robo-advisor up to time $n$ include:\begin{itemize}
+        \item Economy states $(Y_0,Y_1,\ldots,Y_n)\in\{1,2\}^n$;
+        \item Risky asset returns $(Z_1,Z_2,\ldots,Z_n)\in\mathbb{R}^n$;
+        \item Communicated risk aversions from the client $(\xi_0,\xi_1,\ldots,\xi_n)\in\mathbb{R}_{\geq0}^n$.
+    \end{itemize} Therefore, for any $n$, to enumerate all possible $d\in\mathcal D_n$, one need to enumerate at least \begin{equation}\label{eq:highdim}
+        O\left(\frac{|\mathcal Y|^n}{(\Delta Z)^n(\Delta\xi)^n}\right),
+    \end{equation}tuples of $((Y_0,Y_1,\ldots,Y_n), (Z_1,Z_2,\ldots,Z_n), (\xi_0,\xi_1,\ldots,\xi_n))$, where $\Delta Z$ is the step size to discretize a single risky asset return and $\Delta\xi$ is the step size to discretize a single risk aversion. This leads to exponentially large complexity only to discretize a single step and is not possible to compute in reality.
+\end{enumerate}
+
+\citeA{capponi2022personalized} addresses the first issue by decomposing the solution in Equation (\ref{eq:opt}), while they oversimplify the process to solve the second issue. We will close such gap by proving that there exists a tuple of low-dimensional data whose discretization is enough to find optimal strategy of all possible scenarios.
+
+\subsection{Decomposition of the optimal strategy for computational convenience}
+Following \citeA{capponi2022personalized}, one can decompose Equation (\ref{eq:opt}) into the following. For any $n$ and any state $d_n\in D_n$, we have \begin{equation}\label{eq:pi_decompose}
+    \tilde \pi_n^*(d_n)=\frac{1}{\gamma_n^R}\frac{\mu_n^{az}(d_n)-(1+r_{n+1})\gamma_n^R(\mu_n^{bz}(d_n)-\mu_n^a(d_n)\mu_n^{az}(d_n))}{\mu_n^{bz^2}(d_n)-(\mu_n^{az}(d_n))^2},
+\end{equation} where\begin{equation}\label{eq:mu}
+    \begin{aligned}
+    &\mu_n^{a}(d_n)=\E[a_{n+1}(d_{n+1})]\\
+    &\mu_n^{az}(d_n)=\E[a_{n+1}(d_{n+1})\cdot(Z_{n+1}-r_{n+1})]\\
+    &\mu_n^{bz}(d_n)=\E[b_{n+1}(d_{n+1})\cdot(Z_{n+1}-r_{n+1})]\\
+    &\mu_n^{bz^2}(d_n)=\E[b_{n+1}(d_{n+1})\cdot(Z_{n+1}-r_{n+1})^2]
+\end{aligned}
+\end{equation} where for $n=0,1,\ldots,T-1$ and any $d_n\in\mathcal D_n$, \begin{equation}\label{eq:ab}
+    \begin{aligned}
+        &a_n(d_n)=\E[(1+r_{n+1}+(Z_{n+1}-r_{n+1})\tilde\pi^*_n(d_n))a_{n+1}(d_{n+1})]\\
+        &b_n(d_n)=\E[(1+r_{n+1}+(Z_{n+1}-r_{n+1})\tilde\pi^*_n(d_n))^2b_{n+1}(d_{n+1})]\\
+    \end{aligned}
+\end{equation} and for $n=T$, $a_T=b_T\equiv1$. Here, all the expectations are taken over the randomness of future state $d_{n+1}$, which consists of the randomness of market (originating from future economy state $Y_{n+1}$ and market return $Z_{n+1}$) and risk aversion process (originating from $\epsilon_{n+1}$), all conditioned on the current state $d_n$.
+
+Carefully inspecting Equations (\ref{eq:pi_decompose}), (\ref{eq:mu}) and (\ref{eq:ab}), one would easily find the following order of evaluation:\begin{equation}\label{eq:order}\begin{aligned}
+    &a_T,b_T&&\Rightarrow \mu_{T-1}^{a}, \mu_{T-1}^{az}, \mu_{T-1}^{bz}, \mu_{T-1}^{bz^2}&&&\Rightarrow\tilde\pi_{T-1}^*\\
+    \Rightarrow\quad&a_{T-1},b_{T-1}&&\Rightarrow\mu_{T-2}^{a}, \mu_{T-2}^{az}, \mu_{T-2}^{bz}, \mu_{T-2}^{bz^2}&&&\Rightarrow\tilde\pi_{T-2}^*\\
+    \Rightarrow\quad&a_{T-2},b_{T-2}&&\Rightarrow\ldots
+\end{aligned}
+\end{equation}
+
+To be more specific, for all $n=T-1,\ldots,0$, and for any possible state $d_n\in\mathcal D_n$, one can first calculate the values of $\mu_{n}^{a}(d_n), \mu_{n}^{az}(d_n), \mu_{n}^{bz}(d_n), \mu_{n}^{bz^2}(d_n)$ via Equation (\ref{eq:mu}) given that $a_{n+1}(d_{n+1}),b_{n+1}(d_{n+1})$ have been solved for all possible state $d_{n+1}$. This is because in Equation \ref{eq:mu}, the expectations are evaluated by integrating over all possible future states $d_{n+1}$ conditioned on current state $d_n$. Then, since the current state $d_n$ is known, the robo-advisor model the risk aversion as $\gamma_n^R$ and hence the optimal strategy at time $n$ given state $d_n$, $\tilde\pi_n^*(d_n)$, can be valuated by Equation (\ref{eq:pi_decompose}). At last, one can calculate $a_n(d_n),b_n(d_n)$ via Equation (\ref{eq:ab}) as it only involves expectation over the future states at time $n+1$, which can be calculated given $d_n$. One can keep doing this until we find all the $\pi_n^*(d) $ for all $n$ and $d$.
+
+\subsection{Discretization of low-dimensional data}
+
+Although the decomposition of the optimal strategy presented in Equation \eqref{eq:pi_decompose} leads to an algorithm (described in Equation \ref{eq:order}) to evaluate $\tilde\pi_n^*(d)$ at any $n$ given any state $d\in\mathcal D_n$, it is still an impractical algorithm because of the high dimensionality of $D_n$ and its complexity to be discretized. As shown in earlier sections, each state $d_n$ at time $n$ consists of three vectors of length $n$ and to discretize $\mathcal D_n$ to enumerate all states $d_n$ admits exponential complexity that is not feasible in reality. \citeA{capponi2022personalized} briefly addresses this issue by making a claim that there exists a low-dimensional tuple that uniquely determines all the terms in Equations \eqref{eq:pi_decompose}, \eqref{eq:mu} and \eqref{eq:ab}, and that discretizing such low-dimensional data is sufficient for finding $\tilde\pi_n^*(d)$ for all possible state $d\in\mathcal{D}_n$. However, they did not elaborate on such discretization nor did they show how the terms in Equations \eqref{eq:pi_decompose}, \eqref{eq:mu} and \eqref{eq:ab} can be represented using these low-dimensional tuples. In this section, we formally describe a low-dimensional tuple of five variables, such that all terms in Equations \eqref{eq:pi_decompose}, \eqref{eq:mu} and \eqref{eq:ab} will only depend on this tuple.
+
+\begin{theorem}\label{thm:disc}
+    For time $n$, let $\tilde d_n$ be a tuple of the following five values:\begin{itemize}
+        \item $Y_{\tau_n}$: the economy state at the last interaction time;
+        \item $Y_n$: the current economy state;
+        \item $\sum_{k=\tau_n-\phi}^{\tau_n-1}(Z_{k+1}-\mu_{k+1})$: the sum of excess market returns between the two most recent interaction times;
+        \item $\sum_{k=\tau_n}^{n-1}(Z_{k+1}-\mu_{k+1})$: the sum of excess market returns since the most recent interaction time;
+        \item $\xi_n$: the most recent communicated risk aversion.\footnote{Note that the most recent interaction should be at time $\tau_n$. If $n$ is interaction time, then $n=\tau_n$ and $\xi_{\tau_n}=\xi_n$. And if $n$ is not interaction time, then by definition $\xi_n=\xi_{\tau_n}$. Therefore, $\xi_n$ is indeed the most recent communicated risk aversion.}
+    \end{itemize}
+    Let $\tilde{\mathcal D}_n=\mathcal Y\times\mathcal Y\times\mathbb{R}\times\mathbb{R}\times\mathbb{R}_{\geq0}$ to be the space of all possible $\tilde d_n$. Then all terms appearing in Equations \eqref{eq:pi_decompose}, \eqref{eq:mu} and \eqref{eq:ab} can be determined by the values in $\tilde d_n$. In other words, $\tilde\pi_n^*,\mu_n^a,\mu_n^{az},\mu_n^{bz},\mu_n^{bz^2},a_n,b_n,\gamma_n^R$ are not only functions of the full history $d_n$, but also functions of the low-dimensional state $\tilde d_n$.
+\end{theorem}
+
+\begin{proof} To proof that all the terms mentioned in the Equations \eqref{eq:pi_decompose}, \eqref{eq:mu} and \eqref{eq:ab} only depend on the five variables in $\tilde d_n$, we follow the order of execution in Equation \eqref{eq:order} to give a closed-form representation of each term w.r.t. $\tilde d_n$ respectively.
+
+First, we examine $\mu_n^{a}(d_n),\mu_n^{az}(d_n),\mu_n^{bz}(d_n),\mu_n^{bz^2}(d_n)$ from Equation \eqref{eq:mu}, and show how to evaluate their values given only $\tilde d_n$. We take $\mu_n^{az}$ as an example, and other functions are highly similar.
+
+Given $\tilde d_n\in\tilde{\mathcal{D}}_n$,
+$$\begin{aligned}
+\mu_n^{az}(\tilde d)&=\mu_n^{az}(Y_{\tau_n}, Y_n,\sum_{k=\tau_n-\phi}^{\tau_n-1}(Z_{k+1}-\mu_{k+1}),\sum_{k=\tau_n}^{n-1}(Z_{k+1}-\mu_{k+1}),\xi_n)\\
+&=\E[a_{n+1}(\tilde d_{n+1})(Z_{n+1}-r_{n+1})].
+\end{aligned}$$
+Therefore, the key is to integrate over all the possible $\tilde d_{n+1}$ conditioned on $\tilde d_n$.
+\begin{enumerate}
+    \item If $n+1\neq\tau_{n+1}$, i.e., $n+1$ is not an interaction time. Then, the next state $\tilde d_{n+1}$ only depends on the next economy state $Y_{n+1}$ and the market return at time $n+1$, $Z_{n+1}$, which follows distribution $\mathcal{N}(\mu_{n+1},\sigma^2_{n+1})$ where $\mu_{n+1},\sigma^2_{n+1}$ are known because they are determined by current economy state $Y_n$, which is given in $\tilde d_n$. Hence, to calculate the expectation, we need to integrate over $Y_{n+1}$ and $Z_{n+1}$, i.e., \begin{equation}\label{eq:not_inter}
+        \mu_{n}^{az}(\tilde d_n)=\sum_{Y_{n+1}\in\mathcal Y}P_{Y_{n},Y_{n+1}} \int_{z\in\mathbb{R}} {a_{n+1}(\tilde d_{n+1})}(z-r_{n+1})f_{Z_{n+1}}(z)\mathrm{d}z,
+    \end{equation} where $f_{Z_{n+1}}(\cdot)$ is the probability density function of $Z_{n+1}$, i.e., the probability density function of $\mathcal N(\mu_{n+1},\sigma_{n+1}^2)$.
+
+    Given $Y_{n+1}, Z_{n+1}$, the next state $\tilde d_{n+1}$ is determined as follows:\begin{itemize}
+        \item The economy state at the last interaction time is $Y_{\tau_n}$ because the most recent interaction is still at $\tau_n$ if $n+1$ is not.
+        \item The current (at time $n+1$) economy state is $Y_{n+1}$, which is given.
+        \item The cumulative excess market returns between the two most recent interaction times is still $\sum_{k=\tau_n-\phi}^{\tau_n-1}(Z_{k+1}-u_{k+1})$ because the two most recent interactions are still at $\tau_n-\phi$ and $\tau_n$.
+        \item The cumulative excess market returns since the most recent interaction time ($\tau_{n+1}=\tau_n$) u to date ($n+1$) is $\sum_{k=\tau_n}^{n-1}(Z_{k+1}-\mu_{k+1}) + Z_{n+1}-\mu_{n+1}$.
+        \item The most recent communicated risk aversion keeps $\xi_n$ as there's no new interaction.
+    \end{itemize}
+
+    Therefore, if $n+1$ is not an interaction time, we have \begin{equation}
+        \label{eq:dn+1_not_inter}
+        \tilde d_{n+1}=
+    (Y_{\tau_n}, Y_{n+1}, \sum_{k=\tau_n-\phi}^{\tau_n-1}(Z_{k+1}-u_{k+1}), \sum_{k=\tau_n}^{n-1}(Z_{k+1}-\mu_{k+1}) + Z_{n+1}-\mu_{n+1}, \xi_n),
+    \end{equation} which completes Equation \eqref{eq:not_inter}.
+
+    \item If $n+1$ is indeed an interaction time, then the next state $\tilde d_{n+1}$ depends not only on $Y_{n+1}, Z_{n+1}$, but also on the client's risk aversion process, due to the $\phi$ i.i.d. random variables $\epsilon_{\tau_n+1},\ldots,\epsilon_{n+1}$. In fact, $\tilde d_{n+1}$ will depend only on the sum  $\epsilon_{\tau_n+1}+\ldots+\epsilon_{n+1}$. Therefore, to calculate the expectation, one needs to integrate over all three variables, i.e., \begin{equation}
+        \label{eq:inter}
+        \mu_n^{az}(\tilde d_n)=\sum_{Y_{n+1}\in\mathcal Y}P_{Y_{n},Y_{n+1}} \int_{z\in\mathbb{R}} \int_{\epsilon\in\mathbb{R}} {a_{n+1}(\tilde d_{n+1})}(z-r_{n+1})f_{Z_{n+1}}(z)f_\epsilon^{(\phi)}(\epsilon)\mathrm{d}z\mathrm d\epsilon,
+    \end{equation} where $f_\epsilon^{(\phi)}$ is the probability density function of random variable $\epsilon_{\tau_n+1}+\ldots+\epsilon_{n+1}$, which can be found via $\phi$-fold convolution of $\epsilon_n$ whose distribution is defined in Equation \eqref{eq:eps}.
+
+    Given $Y_{n+1},Z_{n+1},\epsilon=\epsilon_{\tau_n+1}+\ldots+\epsilon_{n+1}$, the next state $\tilde d$ is determined as follows:\begin{itemize}
+        \item The economy state at the last interaction time is $Y_{n+1}$ because the most recent interaction is $n+1$ as $n+1$ is an interaction time.
+        \item The current (at time $n+1$) economy state is $Y_{n+1}$, which is given.
+        \item The cumulative excess market returns between the two most recent interaction times is  $$\sum_{k=\tau_n}^{n-1}(Z_{k+1}-u_{k+1})+Z_{n+1}-\mu_{n+1}$$ because the two most recent interactions are at $\tau_n=n+1-\phi$ and $n+1$.
+        \item The cumulative excess market returns since the most recent interaction time ($n+1$) u to date ($n+1$) is $0$.
+        \item At last, for the most recent communicated risk aversion $\xi_{n+1}$, we have $$
+        \begin{aligned}
+            \xi_{n+1}=\gamma_{n+1}^C\exp\left(-\frac{\beta}{\phi}\left(\sum_{k=\tau_n}^{n-1}(Z_{k+1}-\mu_{k+1})+Z_{n+1}-\mu_{n+1}\right)\right)
+        \end{aligned}
+        $$ where $$\gamma_{n+1}^C=\gamma_{\tau_n}^C\exp(\eta_{n+1}-\eta_{\tau_n})\frac{\gamma_{n+1}^{id}}{\gamma_{\tau_n}^{id}}\frac{\gamma_{n+1}^{Y}}{\gamma_{\tau_n}^Y}=\gamma_{\tau_n}^C\exp(\alpha\phi+\epsilon)\frac{\exp{S(Y_{n+1})}}{\exp{S(Y_{\tau_n})}}$$
+        where $$
+        \gamma_{\tau_n}^C=\xi_{\tau_n}\exp\left(\frac\beta\phi\sum_{k=\tau_n-\phi}^{\tau_n-1}(Z_{k+1}-\mu_{k+1})\right)=\xi_{n}\exp\left(\frac\beta\phi\sum_{k=\tau_n-\phi}^{\tau_n-1}(Z_{k+1}-\mu_{k+1})\right).
+        $$ Assembling the above, we have \begin{equation}\label{eq:xin+1}
+            \xi_{n+1}=\xi_{n}e^{\left(\alpha\phi+\epsilon-\frac{\beta}{\phi}\left(\sum_{k=\tau_n}^{n-1}(Z_{k+1}-\mu_{k+1})+Z_{n+1}-\mu_{n+1}-\sum_{k=\tau_n-\phi}^{\tau_n-1}(Z_{k+1}-\mu_{k+1})\right)+S(Y_{n+1})-S(Y_{\tau_n})\right)}.
+        \end{equation} Note that all terms appearing in Equation \eqref{eq:xin+1} can be calculated as they are either given by $\tilde d_n$ or provided by $X_{n+1},Y_{n+1},\epsilon$.
+    \end{itemize}
+
+    Therefore, given current state $\tilde d_n$ and $Y_{n+1}, Z_{n+1}, \epsilon$, the next state follows \begin{equation}
+    \label{eq:dn+1_inter}
+        \tilde d_{n+1}=\begin{pmatrix}Y_{n+1},\\
+        Y_{n+1},\\
+        \sum_{k=\tau_n}^{n-1}(Z_{k+1}-u_{k+1})+Z_{n+1}-\mu_{n+1},\\
+        0,\\
+        \xi_{n}e^{\left(\alpha\phi+\epsilon-\frac{\beta}{\phi}\left(\sum_{k=\tau_n}^{n-1}(Z_{k+1}-\mu_{k+1})+Z_{n+1}-\mu_{n+1}-\sum_{k=\tau_n-\phi}^{\tau_n-1}(Z_{k+1}-\mu_{k+1})\right)+S(Y_{n+1})-S(Y_{\tau_n})\right)}
+    \end{pmatrix}
+    \end{equation}
+    
+    Substituting Equation \eqref{eq:dn+1_inter} as $\tilde d_{n+1}$ back to Equation \eqref{eq:inter}, one can calculate $\mu_{n}^{az}(\tilde d_n)$ via integration over $Y_{n+1},Z_{n+1},\epsilon$.
+\end{enumerate}
+
+Hence, we've shown that $\mu_n^{az}$ can be determined only by $\tilde d_n$ (instead of the high-dimensional $d_n$). One can calculate $\mu_n^a,\mu_n^{bz},\mu_n^{bz^2}$ similarly given any tuple $\tilde d_n$. Next, as instructed by the execution order in Equation \eqref{eq:order}, we examine the evaluation of $\tilde\pi_n^*$ via Equation \eqref{eq:pi_decompose}. Note that all terms but $\gamma_n^R$ has been determined, then it suffices to show that one can evaluate $\gamma_n^R$ given $\tilde d_n$. This is possible because as per its definition (Equation \eqref{eq:gamma_r})\begin{equation}\label{eq:gamma_r2}
+    \gamma_n^R=\exp(\eta_n-\eta_{\tau_n})\xi_{\tau_n}\frac{\gamma_n^Y}{\gamma_{\tau_n}^Y}=\exp(\eta_n-\eta_{\tau_n})\xi_n\frac{\exp(S(Y_n))}{\exp(S(Y_{\tau_n}))},
+\end{equation} where all terms in Equation \eqref{eq:gamma_r2} can be determined from $\tilde d_n$. Therefore, $\tilde\pi_n^*$ can also be calculated via Equation \eqref{eq:pi_decompose}.
+
+At last, as directed by the execution order in Equation \eqref{eq:order}, we next examine variables $a_n,b_n$ and verify that they indeed are functions of $\tilde d_n$. This is very similar to what we have done with $\mu_n^{az}$.
+
+Take $a_n(\tilde d_n)$ for example. If $n+1$ is not an interaction time, according to its definition \eqref{eq:ab}, we have $$
+a_n(d_n)=\sum_{Y_{n+1}\in\mathcal Y}\int_{z\in\mathbb R} (1+r_{n+1}+(z-r_{n+1})\tilde\pi^*_n(\tilde d_n))a_{n+1}(\tilde d_{n+1}) f_{Z_{n+1}}(z)\mathrm dz
+$$ where $\tilde d_{n+1}$ follows Equation \eqref{eq:dn+1_not_inter}. If $n+1$ is an interaction time, then we have $$
+a_n(d_n)=\sum_{Y_{n+1}\in\mathcal Y}\int_{\epsilon\in\mathbb R}\int_{z\in\mathbb R} (1+r_{n+1}+(z-r_{n+1})\tilde\pi^*_n(\tilde d_n))a_{n+1}(\tilde d_{n+1}) f_{Z_{n+1}}(z) f_\epsilon^{(\phi)}(\epsilon)\mathrm dz\mathrm d\epsilon
+$$ where $\tilde d_{n+1}$ follows Equation \eqref{eq:dn+1_inter}. $b_n(d_n)$ can be evaluated in the same way.
+
+Hence, we have shown that all the terms required to calculate the optimal strategy are functions of $\tilde d_n$, thus have completed the proof.
+
+\end{proof}
+
+\begin{corollary} One only need to discretize the space of $\tilde{\mathcal D}_n$ instead of $\mathcal D_n$ to find the optimal strategy given any possible state. If the step size of discretizing cumulative returns to be $\Delta Z$ and the step size of discretizing risk aversion to be $\Delta\xi$, the number of grid points to be discretized in total for any $n$ will be\begin{equation}\label{eq:lowdim}
+    O\left(\frac{|\mathcal Y|^2}{(\Delta Z)^2\Delta\xi}\right)
+\end{equation} which does not increase in $n$ and hence is a significant improvement of the complexity that increases exponentially with $n$ in Equation \eqref{eq:highdim}.
+\end{corollary}
+
+\begin{algorithm}[t]
+  \caption{\textbf{Numerical evaluation of optimal strategy via backwards induction and discretization.}\\
+  This is a direct result of Equation \eqref{eq:pi_decompose} and Theorem \ref{thm:disc}.}
+  \label{alg2}
+  \begin{spacing}{1.15}
+\begin{itemize}
+    \item For $n=T-1,T-2,\ldots,0$:
+    \begin{itemize}
+        \item For the $O\left(\frac{|\mathcal Y|^2}{(\Delta Z)^2\Delta\xi}\right)$ many tuples of possible $\tilde d_n$:\begin{itemize}
+            \item Calculate values $\mu^a_{n}(\tilde d_n),\mu^{az}_{n}(\tilde d_n),\mu^{bz}_{n}(\tilde d_n),\mu^{bz^2}_{n}(\tilde d_n),\pi_n^*(\tilde d_n),a_n(\tilde d_n),b_n(\tilde d_n)$ as shown in the proof of Theorem \ref{thm:disc} via integration over the future economy state $Y_{n+1}$, market return $Z_{n+1}$ and risk aversion idiosyncratic shock random variable $\epsilon_{n+1}$.
+        \end{itemize}
+    \end{itemize}
+\end{itemize}
+  \end{spacing}
+\end{algorithm}
+
+Combining the decomposition in Equation \eqref{eq:pi_decompose} and the low-dimensional discretization in Theorem \ref{thm:disc}, the backwards induction algorithm is now complete and practical to execute, which is described in Algorithm \ref{alg2}.
+
+\subsection{Approximation for faster computation}\label{sec:approx}
+Although Theorem \ref{thm:disc} has significantly reduced the computational complexity to evaluate the optimal strategy via backwards induction, we further optimize for faster computation. Note that for each $n$ and for each $\tilde d_n$, we need to calculate six integrals (or even double integration if $n+1$ is an interaction time) for $\mu_n^a,\mu_n^{az},\mu_n^{bz},\mu_n^{bz^2},a_n,b_n$. We can avoid most integrals by approximating $X_{n+1}$ as its mean value, $\mu_{n+1}$. In this way, we replace Equation \eqref{eq:not_inter} with \begin{equation}
+    \label{eq:not_inter_approx}
+    \mu_n^{az}(\tilde d_n)=\sum_{Y_{n+1}\in\mathcal Y}P_{Y_n,Y_{n+1}} a_{n+1}(\tilde d_{n+1}|_{Z_{n+1}=\mu_{n+1}})(\mu_{n+1}-r_{n+1})
+\end{equation} where $\tilde d_{n+1}|_{Z_{n+1}=\mu_{n+1}}$ is Equation \eqref{eq:dn+1_not_inter} with $Z_{n+1}$ substituted with $\mu_{n+1}$. Also, we replace Equation \eqref{eq:inter} with \begin{equation}
+    \label{eq:inter_approx}
+    \mu_{n}^{az}(\tilde d_n)=\sum_{Y_{n+1}\in\mathcal Y}P_{Y_n,Y_{n+1}}\int_{\epsilon\in\mathbb R} a_{n+1}(\tilde d_{n+1}|_{Z_{n+1}=\mu_{n+1}})(\mu_{n+1}-r_{n+1})f^{(\phi)}_\epsilon(\epsilon)\mathrm d\epsilon
+\end{equation} $\tilde d_{n+1}|_{Z_{n+1}=\mu_{n+1}}$ is Equation \eqref{eq:dn+1_inter} with $Z_{n+1}$ substituted with $\mu_{n+1}$.
+
+Note that \citeA{capponi2022personalized} did not mention that such approximation is a little bit more complicated for terms where $Z_{n+1}$ is not linear, such as $\mu_n^{bz^2}$ and $b_n$, since the expectation of square terms cannot be simply approximated via substitution. To be more specific, we have\begin{align}
+    \mu_n^{bz^2}(\tilde d_n)&=\E[b_{n+1}(d_{n+1}|_{Z_{n+1}=\mu_{n+1}})\cdot ((\mu_{n+1}-r_{n+1})^2+\sigma_{n+1}^2)]\label{mu_bz2_approx}\\
+    b_n(\tilde d_n)&=\E[\{\tilde\pi_n^*(\tilde d_n)^2\sigma_{n+1}^2+[\tilde\pi_n^*(\tilde d_n)(\mu_{n+1}-r_{n+1})+1+r_{n+1}]^2\}b_{n+1}(d_{n+1}|_{Z_{n+1}=\mu_{n+1}})]\label{b_approx},
+\end{align} where the expectation can be calculate via integration over $Y_{n+1}$ and $\epsilon$ (for interaction times) as usual. Equation \eqref{mu_bz2_approx} is due to $$
+    \begin{aligned}
+        \E[(Z_{n+1}-r_{n+1})^2]=\E[Z_{n+1}-r_{n+1}]^2+\Var[Z_{n+1}-r_{n+1}]=(\mu_{n+1}-r_{n+1})^2+\sigma_{n+1}^2,
+    \end{aligned}
+$$ while similarly, Equation \eqref{b_approx} is due to $$
+    \begin{aligned}
+        &\E[(1+r_{n+1}+(Z_{n+1}-r_{n+1})\tilde\pi_n^*(\tilde d_n))^2]\\
+        =&\E[1+r_{n+1}+(Z_{n+1}-r_{n+1})\tilde\pi_n^*(\tilde d_n)]^2+\Var[1+r_{n+1}+(Z_{n+1}-r_{n+1})\tilde\pi_n^*(\tilde d_n)]\\
+        =&(1+r_{n+1}+(\mu_{n+1}-r_{n+1})\tilde\pi_n^*(\tilde d_n))^2+\pi_n^*(\tilde d_n)^2\sigma_{n+1}^2.
+    \end{aligned}
+$$
+
+By applying approximation to integrate over $Z_{n+1}$, we completely get rid of integration if $n+1$ is not an interaction time, and we only have single integration over $\epsilon$ when $n+1$ is an interaction time.
+
+% Note that one has to use backwards induction to solve Equation (\ref{eq:opt}) as at each timestamp $n$, the optimal strategy $\pi_n^*$ involves the distributions of future returns and market states, which are unknown at time $n$. However, one can conduct backwards induction from the terminal state $T-1$ and find the optimal strategies for timestamps $T-1, T-2,\ldots, n$ to compute the optimal strategy at time $n$ under the assumption that all later choices are made optimally.
+
+% To do so, one first decomposes Equation (\ref{eq:optimal_strategy}) into the following, for any $n$ and any state $d\in D_n$, we have \begin{equation}
+%     \tilde \pi_n^*(d)=\frac{1}{\gamma_n}\frac{\mu_n^{az}(d)-R_{n+1}\gamma_n(\mu_n^{bz}(d)-\mu_n^a(d)\mu_n^{az}(d))}{\mu_n^{bz^2}(d)-(\mu_n^{az}(d))^2},
+% \end{equation} where \begin{equation}
+%     \mu_n^a(d)=\E
+% \end{equation}
+
+\section{Estimation of client's personalized parameters}\label{sec:est}
+\citeA{capponi2022personalized} assume that the robo-advisor knows the client's parameters (as shown in Table \ref{tab:param}) that define the client's risk aversion process (i.e. full knowledge of the distribution of the stochastic process). However, such knowledge is not realistic to have in practice. We describe a method to estimate client's personalized parameters that defines the client's risk aversion process, i.e. $\gamma_0$, the client's initial risk aversion, $\alpha$, the time discount factor for client's risk aversion; $\beta$, the behavioral bias factor describing the client's trend-chasing bias; $p_{\epsilon}$ and $\sigma_{\epsilon}$, the parameters describing idiosyncratic shocks to the client’s risk aversion.
+
+The general idea is to create a testing environment with complete and perfect information so that the client can make informed decisions of portfolio selection. If we assume that the client act optimally, one can learn the client's personalized parameters by observing the client's actions. This is an \textit{inverse reinforcement learning} problem \cite{ng2000algorithms} where we are to observe the agent's interactions with the environment and infer the agent's internal states and parameters given that the agent will make optimal choices, similar to the setup of \citeA{alsabah2021robo}. To guarantee that the parameters estimated in the testing environment apply to the robo-advising process described earlier, the market and client model in the testing environment follows the models defined in Section \ref{sec:setting}, with some simplification. There exists a risk-free asset with known return rate $r$ and a risky asset whose return $Z$ is drawn from $\mathcal{N}(\mu, \sigma^2)$. At time $0$, the client has initial wealth of value $X_0$. At each time $n$, the client chooses $\pi_n$, the amount of wealth invested in the risky asset, and hence the client's wealth at time $n+1$, $X_{n+1}$, will be $(1+r)X_{n}+(Z_{n+1}-r)\pi_n$. We assume that the client acts optimally and maximizes the mean-variance objective variance with risk aversion $$\gamma_n^T=\gamma_n^C\gamma_n^Z=e^{\eta_n}\gamma_n^{\text{id}}\gamma_n^Y\gamma_n^Z.$$ Note that we consider the behavioral bias parameter $\gamma_n^Z$ as the client's will display trend-chasing mindset as he or she optimizes the portfolio over time.
+
+We let the robo-advisor observe the client's decisions for $N$ rounds, i.e., $n=0,1,\ldots,N-1$, and the robo-advisor estimates client's parameters as described in the following subsections. For the convenience of some calculations later, we let $N$ to be an odd integer.
+
+\subsection{Observing biased risk aversion via interactions}
+Assume that the client will act optimally in term of maximizing the mean-variance objective variance, one can uniquely identify the risk aversion parameter by observing client's portfolio selection.
+\begin{theorem}\label{thm:action2gamma} At time $n$, if the client chooses $\pi_n^*$ such that $\pi_n^*$ maximizes the mean-variance objective with risk aversion $\gamma_n^T$ $$\E\left[\frac{X_{n+1}(\pi_n)-X_n}{X_n}\right]-\frac{\gamma_n^T}{2}\Var\left[\frac{X_{n+1}(\pi_n)-X_n}{X_n}\right],$$ then the robo-advisor can infer the risk aversion used in such decision making, i.e., $\gamma_n^T$, by observing the optimal action $\pi_n^*$. More specifically, $$\gamma_n^T=\frac{(\mu-r)X_n}{\sigma^2 \pi_n^*}.$$
+\end{theorem}
+
+\begin{proof}
+
+The client's wealth $X_{n+1}$ of time $n+1$ given the strategy $\pi_n$ of time $n+1$ is \begin{equation}(1+r)X_n+(Z_{n+1}-r)\pi_n.\end{equation}
+
+Therefore, we have \begin{gather*}
+    \E[X_{n+1}]=(1+r)X_n + (\mu-r)\pi_n,\\
+    \Var[X_{n+1}]=\pi_n^2\sigma^2.
+\end{gather*}
+
+Substituting back, we have 
+the mean-variance objective function given by $$
+\begin{aligned}
+\E\left[\frac{X_{n+1}-X_n}{X_n}\right]-\frac{\gamma_n^T}{2}\Var\left[\frac{X_{n+1}-X_n}{X_n}\right]=\frac{rX_n+(\mu-r)\pi_n}{X_n}-\frac{\gamma_n^T}{2}\frac{\pi_n^2\sigma^2}{X_n^2}.
+\end{aligned}
+$$
+
+Differentiating w.r.t. $\pi_n$, the objective function takes its maximum if and only if $\pi_n=\frac{X_n (\mu-r)}{\gamma_n^T\sigma^2}$. Therefore, if $\pi_n^*$ is the optimal strategy to maximize the mean-variance objective function, the risk aversion $\gamma_n^T$ used in the objective function is uniquely identifiable, given by $
+\frac{(\mu-r)X_n}{\pi_n^*\sigma^2}
+$.
+\end{proof}
+
+
+\subsection{Estimating client's personalized parameters via the observed biased risk aversion}
+Theorem \ref{thm:action2gamma} shows that observing the client's optimal actions is equivalent to observing the client's risk aversion parameter used in the decision making process. From this point, we assume that the robo-advisor observes $\gamma^T_n$, $n=0,1,\ldots,N-1$, and aims to estimate the parameters that determine this stochastic process, i.e., $\gamma_0,\alpha,\beta,p_\epsilon,\sigma_\epsilon$. We will repeatedly apply \textit{method of moments} \cite{bowman2004estimation} to estimate these parameters.
+
+\begin{theorem}\label{thm:est}
+    Let the number of testing rounds, $N$, be an odd positive integer. Given complete information on market dynamics and the client's risk aversion process during the testing rounds, $\gamma_n^T$,  $n=0,1,\ldots, N-1$, let $Q_n=\ln(\gamma_n^T/\gamma_{n-1}^T)$ and $\Delta Z_n=Z_n-Z_{n-1}$ for $n=1,2,\ldots,N-1$.\footnote{$Z_0$ has not been defined. For the scope of this subsection, we set $Z_0$ to be $\mu(Y_0)$, the mean value for $Z_1$.} The personalized parameters $\gamma_0,\alpha,\beta,\sigma_\epsilon,p_\epsilon$ can be estimated as \begin{align*}
+        \hat\gamma_0&=\gamma_0^T,\\
+        \hat \beta&=\frac{Q_1+Q_3+\ldots Q_{N-2}-Q_2-Q_4-\ldots-Q_{N-1}}{\Delta Z_2+\Delta Z_4+\ldots+\Delta Z_{N-1}-\Delta Z_1-\Delta Z_3-\ldots-\Delta Z_{N-2}},\\
+        \hat\alpha&=\frac{Q_1+Q_2+\ldots Q_{N-1}+\hat\beta(Z_{N-1}-Z_0)}{N-1},\\
+        \hat\sigma_\epsilon&=\sqrt{\frac{\hat \mu_4}{3\hat\mu_2}},\\
+        \hat p_\epsilon&=\frac{\hat\mu_2}{\hat\sigma_\epsilon^2},
+    \end{align*} where
+        \begin{align*}
+            \hat\mu_2&=\frac{1}{N-1}\sum_{n=1}^{N-1} (Q_n+\hat\beta\Delta Z_n-\hat\alpha)^2\\
+            \hat\mu_4&=\frac{1}{N-1}\sum_{n=1}^{N-1} (Q_n+\hat\beta\Delta Z_n-\hat\alpha)^4.
+        \end{align*}
+\end{theorem}
+\begin{proof}
+    This theorem immediately follows the following lemmas.
+
+    \begin{lemma}\label{lem:est_ab}
+    Let the number of testing rounds, $N$, be an odd positive integer. Given complete information on market and client's risk aversion process $\gamma^T_n$, $n=0,1,\ldots,N-1$, define $Q_n,\Delta Z_n$ as in Theorem \ref{thm:est}. The personalized parameters $\gamma_0,\alpha,\beta$ can be estimated as \begin{align*}
+        \hat\gamma_0&=\gamma_0^T\\
+        \hat \beta&=\frac{Q_1+Q_3+\ldots Q_{N-2}-Q_2-Q_4-\ldots-Q_{N-1}}{\Delta Z_2+\Delta Z_4+\ldots+\Delta Z_{N-1}-\Delta Z_1-\Delta Z_3-\ldots-\Delta Z_{N-2}}\\
+        \hat\alpha&=\frac{Q_1+Q_2+\ldots Q_{N-1}+\hat\beta(Z_{N-1}-Z_0)}{N-1}.
+    \end{align*} Moreover, conditioning on the event that $\epsilon_1,\epsilon_2,\ldots,\epsilon_{N-1}$ are all zeros\footnote{This is a high probability event if setting $N$ to be small.}, the estimates are accurate.
+\end{lemma}
+
+\begin{proof}
+We first express $\gamma_n^T$ as a process dependent on these parameters: \begin{gather}
+    \gamma_0^T=\gamma_0,\\
+    \frac{\gamma_{n+1}^T}{\gamma_{n}^T}=e^{\eta_{n+1}-\eta_{n}}\frac{\gamma_{n+1}^{id}}{\gamma_n^{id}}\frac{\gamma_{n+1}^Y}{\gamma_n^Y}\frac{\gamma_{n+1}^Z}{\gamma_n^Z}=e^\alpha e^{\epsilon_{n+1}} e^{-\beta(Z_{n+1}-Z_n)},\quad n=0,1,\ldots,N-2.\label{eq:3.6}
+\end{gather}
+Note that (\ref{eq:3.6}) is correct for $n=0$ because we manually set $Z_0$ to be the mean of $Z_1$, and that $\gamma_0^Z=1$ because there's no investment history to bias the client.
+
+Therefore, the robo-advisor can have an accurate estimation of $\gamma_0$ by only observing the client's action at time $0$ (since at initialization, there's no bias at all and the communicated risk aversion is indeed the actual risk aversion). For $n=1,2,\ldots,N-1$, $Q_{n}=\ln(\gamma_{n}^T/\gamma_{n-1}^T)$ and $\Delta Z_n=Z_n-Z_{n-1}$ are both observable. The robo-advisor aims to estimate $\alpha,\beta$ from $$
+\alpha+\epsilon_n-\beta\Delta Z_n=Q_n, \quad n=1,2,\ldots,N-1
+$$
+
+We first estimate $\beta$, then $\alpha$, and finally $\epsilon$ (in the next lemma), by method of moments. First, for $\beta$, note that \begin{equation}
+\begin{aligned}
+    \epsilon_2-\epsilon_1&=\beta(\Delta Z_{2}-\Delta Z_1)+Q_{2}-Q_1,\\
+    \epsilon_4-\epsilon_3&=\beta(\Delta Z_{4}-\Delta Z_3)+Q_{4}-Q_3,\\
+    &\ldots\\
+    \epsilon_{N-1}-\epsilon_{N-2}&=\beta(\Delta Z_{N-1}-\Delta Z_{N-2})+Q_{N-1}-Q_{N-2}
+\end{aligned}\label{eq:3.7}
+\end{equation} where the LHS of each equation in (\ref{eq:3.7}) is an i.i.d. sample of a random variable with zero mean (due to the distribution of $\epsilon_n$). Hence, one can estimate $$\hat\beta=\frac{Q_1+Q_3+\ldots Q_{N-2}-Q_2-Q_4-\ldots-Q_{N-1}}{\Delta Z_2+\Delta Z_4+\ldots+\Delta Z_{N-1}-\Delta Z_1-\Delta Z_3-\ldots-\Delta Z_{N-2}}$$ by letting the sum of the RHS formulas in (\ref{eq:3.7}) zero and solving $\hat\beta$.
+
+Then, to estimate $\alpha$, note that
+\begin{equation}
+    \begin{aligned}
+        \epsilon_1&=Q_1+\beta\Delta Z_1-\alpha\\
+        \epsilon_2&=Q_2+\beta\Delta Z_2-\alpha\\
+        \ldots\\
+        \epsilon_{N-1}&=Q_{N-1}+\beta\Delta Z_{N-1}-\alpha
+    \end{aligned}\label{eq:3.8}
+\end{equation}
+where the LHS of each equation in (\ref{eq:3.8}) an i.i.d. sample of a random variable with zero mean (due to the distribution of $\epsilon_n$). Hence one can estimate
+$$\hat\alpha=\frac{Q_1+Q_2+\ldots Q_{N-1}+\hat\beta(Z_{N-1}-Z_0)}{N-1}.$$ by setting the sum of the RHS formulas in (\ref{eq:3.8}) zero and solving $\hat\alpha$.
+
+At last, if all $\epsilon_n$ are zeros, then the LHS of each equation in (\ref{eq:3.7}) and (\ref{eq:3.8}) are precisely zeros instead of i.i.d. samples of a random variable with zero mean, rendering the solved $\hat\alpha$ and $\hat\beta$ precise.
+\end{proof}
+
+\begin{lemma}\label{lem:est_eps}
+    Following the notations introduced in Theorem \ref{thm:est} and Lemma \ref{lem:est_ab}, given complete information on market dynamics and client's risk aversion process during the testing period $\gamma_n^T$, $n=0,1,\ldots,N-1$, and the accurate values of $\alpha$ and $\beta$. The personalized parameters $\sigma_\epsilon$ and $p_\epsilon$ can be estimated as $$
+    \hat\sigma_\epsilon=\sqrt{\frac{\hat \mu_4}{3\hat\mu_2}}, \quad \hat p_\epsilon = \frac{\hat\mu_2}{\hat\sigma_\epsilon^2},
+    $$ where \begin{equation}
+        \begin{aligned}
+            \hat\mu_2&=\frac{1}{N-1}\sum_{n=1}^{N-1} (Q_n+\beta\Delta Z_n-\alpha)^2\\
+            \hat\mu_4&=\frac{1}{N-1}\sum_{n=1}^{N-1} (Q_n+\beta\Delta Z_n-\alpha)^4
+        \end{aligned}\label{eq:3.9}
+    \end{equation} are sample means of $\epsilon_n$ of order 2 and order 4.
+\end{lemma}
+\begin{proof}
+    Given $Q_n,\beta,\Delta Z_n,\alpha$, (\ref{eq:3.8}) provides $N-1$ i.i.d. samples of $\epsilon_n$ which admits the following distribution $$
+        \epsilon_n=\begin{cases}
+        \mathcal{N}(0,\sigma_\epsilon^2),\quad&\text{with probability } p_\epsilon\\
+        0,\quad&\text{with probability } 1-p_\epsilon
+        \end{cases}.
+    $$
+
+    To apply the method of moments for estimation of parameters $p_\epsilon$ and $\sigma_\epsilon$, we need to evaluate the expectation values of $\epsilon_n^2$ and $\epsilon^4$. This is because for odd orders, the expectation will always be zero, which is not a function of the parameters $p_\epsilon$ and $\sigma_\epsilon$.
+
+    To calculate the expectation values, we first express $\epsilon_n$ as $XY$ where $X$ and $Y$ are independent random variables, and $X\sim\text{Bernoulli}(p_\epsilon)$ and $Y\sim\mathcal{N}(0,\sigma_\epsilon^2)$. Then we have \begin{gather*}
+        \E[\epsilon_n^2]=\E[X^2Y^2]=\E[X^2]\E[Y^2]=\E[X](\Var[Y]+\E[Y]^2)=p_\epsilon\sigma_\epsilon^2\\
+        \E[\epsilon_n^4]=\E[X^4Y^4]=\E[X^4]\E[Y^4]=3p_\epsilon\sigma_\epsilon^4.
+    \end{gather*}
+    
+    At last, solving $\hat\mu_2=p_\epsilon\sigma_\epsilon^2$ and $\hat\mu_4=3p_\epsilon\sigma_\epsilon^4$, we have estimations \begin{gather*}
+    \hat\sigma_\epsilon=\sqrt{\frac{\hat\mu_4}{3\hat\mu_2}}, \quad \hat p_\epsilon=\frac{\hat\mu_2}{\hat\sigma_\epsilon^2},
+\end{gather*} where $\hat\mu_2$ is the sample mean of $\epsilon_n^2$ and $\hat\mu_4$ is the sample mean of $\epsilon_n^4$, as defined in (\ref{eq:3.9}). 
+\end{proof}
+
+Combining Lemma \ref{lem:est_ab} and Lemma \ref{lem:est_eps}, we have completed the proof of Theorem \ref{thm:est}.
+    
+\end{proof}
