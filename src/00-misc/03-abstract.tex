@@ -1,14 +1,16 @@
-\chapter*{Abstract\footnote{This abstract serves the purpose of the report summary required by the Department.}}
+\chapter*{Abstract\footnote{This extended abstract serves the purpose of the report summary required by the Department.}}
 \addcontentsline{toc}{chapter}{Abstract}
 
-This is an abstract
+Robo-advisors are digital investment platforms that use algorithms to provide automated investment advice and portfolio management services. They have become increasingly popular in recent years as technology has advanced, and more investors seek low-cost, automated investment management solutions. In this report, we study robo-advising algorithms for risk profile estimation and portfolio optimization.
 
-\bigskip
+We first provide a comprehensive literature review on robo-advisors, including their origin, development, advantages, current state and typical workflow. We then provide a novel taxonomy of robo-advisors and categorize existing models by their optimization goal, client input and interaction schedule.
 
-\noindent Keywords:
+To study robo-advisors in greater depth, we adopt the setting of \citeA{capponi2022personalized}, where a robo-advisor interacts with the client according to a pre-determined schedule and updates its estimation of the behaviorally biased client's risk aversion and make investment decisions based on mean-variance optimization. We study the proposed robo-advising algorithm of \citeA{capponi2022personalized} in great depth, with a particular focus on what they have ignored and oversimplified: (i) implementation details of the numerical algorithm to find optimal strategies; (ii) estimation of client's personalized parameters.
 
-\begin{table}[H]
-    \begin{tabular}{ll}
-        \hspace*{0.5cm} & robo-advising, portforlio optimization\\
-    \end{tabular}
-\end{table}
+In Section \ref{sec:comp} and Section \ref{sec:impl}, we describe in extensive detail the robo-advising algorithm and its implementation, and to that end, we prove in Theorem \ref{thm:disc} that the optimal strategy at any time only depends on a low-dimensional state tuple of only five variables instead of a high-dimensional full history of states. This is a key component to the implementation of the algorithm via discretization of the all possible states and backwards induction, yet missing in \citeA{capponi2022personalized}. Following Theorem \ref{thm:disc} and its proof, we successfully implement our robo-advising algorithm\footnote{See \url{https://github.com/iamyiqiu/ra}.} and validate our implementation by experiments presented in Section \ref{sec:opt}. To the best of our knowledge, this is the first open source implementation of the robo-advisor described in \citeA{capponi2022personalized}.
+
+Another novel contribution is that through Theorem \ref{thm:est}, we propose a method for the robo-advisor to estimate the personalized parameters of the client, which are assumed to be known to the robo-advisor in the original paper. We use methods of moments to estimate the parameters and demonstrate the precision of the estimations in Section \ref{sec:est_exp}.
+
+Other than the contributions mentioned earlier, we also discuss the effects of economy states on the robo-advisor's optimal strategy in Section \ref{sec:opt}. We also calculate the expected behavioral bias and argue that on average it would increase the client's risk aversion in the same section. In Section \ref{sec:personalize}, we focus on the personalization measure of the robo-advisor and elaborate on the trade-off between better estimation of risk aversion versus higher behavioral bias. 
+
+To conclude, this report surveys current advances of robo-advising algorithms and study the algorithm described in \citeA{capponi2022personalized}. We close the gaps where the original paper does not elaborate on and provide new theoretical and empirical results.
